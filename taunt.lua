@@ -33,7 +33,7 @@ Scroll down to "Taunt Functions" line: 194ish for documentation on the functions
 taunt = {}
 local mod = mod_loader.mods[modApi.currentMod]
 local scriptPath = mod.scriptPath
-local previewer = require(scriptPath .."libs/weaponPreview_taunt")
+local previewer = require(scriptPath .."taunt/weaponPreview_taunt")
 
 --Icons, gotta love them
 modApi:appendAsset("img/combat/icons/tauntIcon_0.png", scriptPath.."taunt/img/combat/icons/tauntIcon_0.png")
