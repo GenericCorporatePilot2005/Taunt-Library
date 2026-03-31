@@ -1,7 +1,8 @@
 ------------------------------------------------------------------------------
 -- Taunt Library
--- v2.0.2
+-- v2.1
 -- By: NamesAreHard (NamesAreHard#2501) and Truelch (Truelch#4266)
+--Update by Generic2005
 ------------------------------------------------------------------------------
 -- Contains functions that allow for a new mechanic, taunting, that changes vek attacks to a new tile
 --
@@ -30,9 +31,9 @@ Scroll down to "Taunt Functions" line: 194ish for documentation on the functions
 ]]--
 
 taunt = {}
-
 local mod = mod_loader.mods[modApi.currentMod]
 local scriptPath = mod.scriptPath
+local previewer = require(scriptPath .."libs/weaponPreview_taunt")
 
 --Icons, gotta love them
 modApi:appendAsset("img/combat/icons/tauntIcon_0.png", scriptPath.."taunt/img/combat/icons/tauntIcon_0.png")
@@ -76,12 +77,15 @@ modApi:appendAsset("img/combat/icons/tauntIcon_3_d.png", scriptPath.."taunt/img/
 modApi:appendAsset("img/combat/icons/tauntFailIcon_3_d.png", scriptPath.."taunt/img/combat/icons/tauntFailIcon_3_d.png")
 	Location["combat/icons/tauntFailIcon_3_d.png"] = Point(-35,-26)
 
-
+modApi:appendAsset("img/combat/tile_icon/tauntIcon_target.png",
+	scriptPath.."taunt/img/combat/tile_icon/tauntIcon_target.png")
+	Location["combat/tile_icon/tauntIcon_target.png"] = Point(-30,0)
+modApi:appendAsset("img/combat/icons/tauntIcon_target.png",
+	scriptPath.."taunt/img/combat/icons/tauntIcon_target.png")
+	Location["combat/icons/tauntIcon_target.png"] = Point(-15,-7)
 
 --Animations
 require(scriptPath .. "/taunt/tauntAnims")
-
-
 
 ---------------------------- Utility/Local Functions ----------------------------
 
@@ -218,7 +222,7 @@ function taunt.enemy(id, point)
 	if Board == nil then return end
 
 	local pawn = Board:GetPawn(id)
-  if IsTipImage() or pawn == nil or not isEnemyPawn(pawn) or not canBeTauntedByPoint(pawn, point) then return end
+  if --[[IsTipImage() or]] pawn == nil or not isEnemyPawn(pawn) or not canBeTauntedByPoint(pawn, point) then return end
 
 	local loc = pawn:GetSpace()
 
@@ -253,44 +257,76 @@ end
   @param pawn		the id
   @param point		the new point for the pawn to target
   @param dmg[opt=0] the damage to do to the taunted point (if you do this outside, the icon will be overridden)
+  dmg as DAMAGE_DEATH will always make the taunt fail, DAMAGE_ZERO will default to 0
+  @param push[opt=DIR_NONE] makes it so the taunt also pushes the unit; the taunt only applies to the original tile, not to the new one.
+  DIR_FLIP will default to DIR_NONE
   @param failFlag[opt=false] If true, if the taunt fails, it no longer does damage
+  @param addition[opt=""] if "fire", "acid", or "crack", applies the respective effect, as if iFire == 1, iAcid == 1, or iCrack == 1 for each case
+  The only way I could add this without adding 3 new parameters, won't accept "frozen" or "smoke" for obvious reasons
+  @param pushFlag[opt=false] if true, won't push when the taunt fails, defaults to false if push is DIR_NONE
+  @param hideFlag[opt=false] if true, hides the taunt completely, specifically the animations, if you were to need this option
   @return returns a bool: true if the taunt is successful and false if it is not
 ]]
 
-function taunt.addTauntEffectEnemy(effect, id, point, dmg, failFlag)
+function taunt.addTauntEffectEnemy(effect, id, point, dmg, push, failFlag,addition,pushFlag,hideFlag)
 	local ret = false
-
+	addition = string.lower(addition) or ""
+	local finalPush = DIR_NONE
+	if push and push ~= DIR_FLIP then
+		finalPush = push
+	end
+	if dmg == DAMAGE_ZERO then dmg = 0 end
 	dmg = dmg or 0
 	failFlag = failFlag or false
-	if Board == nil or IsTipImage() then return end
+	pushFlag = pushFlag or false
+	hideFlag = hideFlag or false
+	if Board == nil then return end
 	local pawn = Board:GetPawn(id)
-	if pawn == nil or not isEnemyPawn(pawn) then return end
-	local loc = pawn:GetSpace()
-	local dir = GetDirection(point - loc)
-
+    local loc = pawn:GetSpace()
+    
+    -- DEFINE dir here for the icons, using the new point and current loc
+    local dir = GetDirection(point - loc) 
 
 	effect:AddScript([[
 		taunt.enemy(]]..id..[[,]]..point:GetString()..[[)
 	]])
-	local damage = SpaceDamage(loc,dmg)
-	if canBeTauntedByPoint(pawn, point) then
+	local damage = SpaceDamage(loc, dmg, finalPush) -- Use 'loc' here
+	damage.iFire = addition == "fire" and 1 or 0
+	damage.iAcid = addition == "acid" and 1 or 0
+	damage.iCrack = addition == "crack" and 1 or 0
+	
+	if canBeTauntedByPoint(pawn, point) and dmg ~= DAMAGE_DEATH then
 		damage.sImageMark = "combat/icons/tauntIcon_"..tostring(dir)..".png"
-		if dmg > 0 then
+		if dmg > 0 or finalPush == DIR_FLIP then
 			damage.sImageMark = "combat/icons/tauntIcon_"..tostring(dir).."_d.png"
 		end
-		damage.sAnimation = "taunted"
+		damage.sAnimation = not hideFlag and "taunted" or ""
+		--damage.bHide = hideFlag
 		effect:AddDamage(damage)
 		damage = SpaceDamage(point,0)
-		damage.sAnimation = "taunting"
+		damage.sAnimation = not hideFlag and "taunting" or ""
 
 		--Remove Webs
 		effect:AddScript(string.format("Board:GetPawn(%s):SetSpace(Point(-1,-1))", id))
 		effect:AddDelay(0.016)
 		effect:AddScript(string.format("Board:GetPawn(%s):SetSpace(%s)", id, loc:GetString()))
+		if not hideFlag then
+			Board:Ping(point,GL_Color(255,108,22))
+			local terrain = Board:GetTerrain(point)
+			if terrain == TERRAIN_WATER or terrain == TERRAIN_ICE or terrain == TERRAIN_CHASM then
+				previewer:AddAnimation(point,"tauntIcon_target_1w")
+			else 
+				previewer:AddAnimation(point,"tauntIcon_target_1")
+			end
+			previewer:AddAnimation(point,"tauntIcon_target_2")
+		end
 
 		ret = true
 	else
 		damage.sImageMark = "combat/icons/tauntFailIcon_"..tostring(dir)..".png"
+		if pushFlag then
+			damage.iPush = DIR_NONE
+		end
 		if failFlag then
 			damage.iDamage = 0
 		elseif dmg > 0 then
@@ -312,18 +348,42 @@ end
   @param space		the space to trigger the effect on
   @param point		the new point for the pawn to target
   @param dmg[opt=0] the damage to do to the taunted point (if you do this outside, the icon will be overridden)
+  dmg as DAMAGE_DEATH will always make the taunt fail, DAMAGE_ZERO will default to 0
+  @param push[opt=DIR_NONE] makes it so the taunt also pushes the unit; the taunt only applies to the original tile, not to the new one.
+  DIR_FLIP will default to DIR_NONE
   @param failFlag[opt=false] If true, if the taunt fails, it no longer does damage
+  @param addition[opt=""] if "fire", "acid", or "crack", applies the respective effect, as if iFire == 1, iAcid == 1, or iCrack == 1 for each case
+  The only way I could add this without adding 3 new parameters, won't accept "frozen" or "smoke" for obvious reasons
+  @param pushFlag[opt=false] if true, won't push when the taunt fails, defaults to false if push is DIR_NONE
+  @param hideFlag[opt=false] if true, hides the taunt completely, specifically the animations, if you were to need this option
   @return returns a bool: true if the taunt is successful and false if it is not
 ]]
-function taunt.addTauntEffectSpace(effect, space, point, dmg, failFlag)
+function taunt.addTauntEffectSpace(effect, space, point, dmg, push, failFlag, addition,pushFlag,hideFlag)
+	if dmg == DAMAGE_ZERO then dmg = 0 end
 	dmg = dmg or 0
 	failFlag = failFlag or false
-	if Board == nil or IsTipImage() then return end
+	pushFlag = pushFlag or false
+	addition = addition or ""
+	hideFlag = hideFlag or false
+	local finalPush = DIR_NONE
+	if push and push ~= DIR_FLIP then
+		finalPush = push
+	end
+	if Board == nil --[[or IsTipImage()]] then return end
 	local pawn = Board:GetPawn(space)
-	if pawn == nil or not isEnemyPawn(pawn) then
-		local dir = GetDirection(point - space)
-		local damage = SpaceDamage(space,dmg)
+	if pawn == nil or not isEnemyPawn(pawn) or dmg == DAMAGE_DEATH then
+		local dir = GetDirection(point - space) 
+        
+        
+        local damage = SpaceDamage(space, dmg, finalPush)
+		damage.iFire = addition == "fire" and 1 or 0
+		damage.iAcid = addition == "acid" and 1 or 0
+		damage.iCrack = addition == "crack" and 1 or 0
+		
 		damage.sImageMark = "combat/icons/tauntFailIcon_"..tostring(dir)..".png"
+		if pushFlag then
+			damage.iPush = DIR_NONE
+		end
 		if failFlag then
 			damage.iDamage = 0
 		elseif dmg > 0 then
@@ -333,7 +393,7 @@ function taunt.addTauntEffectSpace(effect, space, point, dmg, failFlag)
 		return false
 	end
 	local id = pawn:GetId()
-	return taunt.addTauntEffectEnemy(effect,id,point,dmg,failFlag)
+	return taunt.addTauntEffectEnemy(effect, id, point, dmg, push, failFlag, addition,pushFlag,hideFlag)
 end
 
 return taunt

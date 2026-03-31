@@ -29,3 +29,13 @@ ANIMS.taunted = Animation:new{
 	Frames = { 1, 2, 3, 2, 1, 2, 3, 2, 1, 2, 3, 4 },
 }
 
+ANIMS.tauntIcon_target_1 = Animation:new{--Preview for taunted tile,
+--not using MarkSpaceImage to not overwrite anything
+    Image = "combat/tile_icon/tauntIcon_target.png",
+    PosX = -30, PosY = 0,
+    Time = 1.5, Loop = false, Layer = LAYER_FLOOR, NumFrames = 1,
+}
+ANIMS.tauntIcon_target_1w = ANIMS.tauntIcon_target_1:new{PosY = 7}--same but for water and chasms
+ANIMS.tauntIcon_target_2 = ANIMS.tauntIcon_target_1:new{--floating icon that also helps
+    Image = "combat/icons/tauntIcon_target.png",
+    PosX = -15, PosY = -14,Layer = LAYER_SKY}
